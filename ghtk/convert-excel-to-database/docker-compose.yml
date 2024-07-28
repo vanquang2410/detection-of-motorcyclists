@@ -1,0 +1,10 @@
+version: '3.8'
+services:
+  db:
+    image: mysql/mysql-server:latest
+    restart: always
+    environment:
+      - MYSQL_DATABASE=ghtk
+      - MYSQL_ROOT_PASSWORD=boquang321
+    ports:
+      - '3306:3306'
