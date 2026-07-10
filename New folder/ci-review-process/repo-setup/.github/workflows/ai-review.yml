@@ -1,0 +1,72 @@
+name: ai-review
+
+on:
+  pull_request:
+    # edited: bot chạy lại khi TIÊU ĐỀ đổi — lượt review chốt đúng lúc dev bỏ [WIP],
+    # trước khi người review vào.
+    types: [opened, synchronize, edited]
+    branches: [develop, main]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+# Push nhiều commit liên tiếp → chỉ giữ lượt review mới nhất, hủy lượt đang chạy
+# (đỡ comment chồng nhau + đỡ tốn quota gói Claude của Lead).
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+# Chạy trên MỌI PR, kể cả đang [WIP] — dev không có Claude Code local dùng PR [WIP]
+# làm vòng lặp "AI review trước khi nhờ người": mở PR [WIP] → bot review → sửa → push → bot chạy lại.
+# (Repo private plan free không có Draft PR nên team dùng tiêu đề [WIP] thay thế.)
+jobs:
+  ai-review:
+    # Với event edited: chỉ chạy khi tiêu đề đổi, bỏ qua sửa description
+    if: github.event.action != 'edited' || github.event.changes.title != null
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Claude AI Review
+        uses: anthropics/claude-code-action@v1
+        with:
+          # Không cần mua API key: token sinh từ gói Claude Pro/Max của Lead.
+          # Setup: trong Claude Code tại repo chạy /install-github-app (tự cài app + secret),
+          # hoặc thủ công: chạy `claude setup-token` rồi lưu secret CLAUDE_CODE_OAUTH_TOKEN.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Bạn là reviewer tự động của team. Review PR này bằng tiếng Việt.
+
+            Bước 0 — xác định chế độ theo diff:
+            - Nếu diff CHỈ gồm file trong docs/solutions/ — đây là PR DOC (CHỐT 1, sẽ được
+              Approve + merge khi đạt): review SOLUTION DOC, không áp rule code. Đối chiếu
+              doc với template docs/process/04-solution-doc-lite.md (hoặc 03 nếu là bản full).
+              Mục "Acceptance Criteria" trong doc là nguồn AC (bạn không truy cập được Plane) —
+              mục này trống/thiếu → [must]. Chỉ ra: AC chưa được mục "Cách làm" cover,
+              luồng lỗi còn thiếu, điểm mơ hồ khiến không code được. Mục tiêu: doc sạch
+              trước khi Sub-lead đọc.
+            - Ngược lại — đây là PR CODE: review theo ĐÚNG bộ rule
+              docs/process/05-review-rules.md (đọc file đó trước), các bước bên dưới.
+
+            Các bước (chế độ review code):
+            1. Đọc docs/process/05-review-rules.md.
+            2. Tìm solution doc của task trong docs/solutions/ (PR body có link) — đối chiếu code với giải pháp
+               đã approve. AC của task nằm ở mục "Acceptance Criteria" trong doc — đối chiếu từng AC với code + test
+               (dòng "Đối chiếu AC: n/tổng" trong output tính theo mục này).
+            3. Đọc diff của PR, kiểm tra từng nhóm rule (đối chiếu giải pháp, correctness, convention BE, test, PR hygiene).
+               Lưu ý rule 1.4: nếu diff THÊM MỚI file docs/solutions/ → kiểm tra file đã tồn tại
+               trên develop chưa bằng `git show origin/develop:<đường dẫn file>`:
+               chưa tồn tại → [must] (code trước khi giải pháp được duyệt);
+               đã tồn tại → [nit] nhắc dev chạy `git pull --no-rebase origin develop` để đồng bộ branch.
+            4. Comment kết quả lên PR theo format ở mục 7 của rule file: finding phân loại [must]/[nit],
+               mỗi finding ghi rõ file:dòng, mã rule vi phạm, và hướng sửa. Mở đầu comment bằng dòng:
+               "> Bản review mới nhất — các bản trước đó hết hiệu lực."
+
+            Nguyên tắc: chỉ báo finding có căn cứ trong rule file hoặc lỗi correctness rõ ràng;
+            không bịa rule mới; không approve/request-changes thay con người.
+          claude_args: |
+            --allowedTools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git show:*),Read,Grep,Glob"

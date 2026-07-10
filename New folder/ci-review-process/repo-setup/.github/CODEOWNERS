@@ -1,0 +1,17 @@
+# CODEOWNERS — chỉ có tác dụng nếu repo bật được branch protection (plan trả phí).
+# Repo private GitHub Free: file này là tài liệu tham khảo cho team.
+#
+# Format: <pattern>  @github-username-or-team
+# Docs: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default — Lead/Sub-lead review tất cả
+*                           @lead-github-username
+
+# Solution docs — Sub-lead review
+docs/solutions/             @sublead-github-username
+
+# Database migrations — Lead review (impact cao)
+src/main/resources/migration/   @lead-github-username
+
+# CI/CD — Lead review
+.github/                    @lead-github-username

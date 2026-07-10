@@ -1,0 +1,38 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "command": "node .claude/hooks/memory-hook.mjs",
+        "description": "Load project memory on session start"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "command": "node .claude/hooks/pr-inventory-hook.mjs",
+        "description": "Track PR-related commands for inventory"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "command": "node .claude/hooks/lesson-hook.mjs",
+        "description": "Capture lessons from code changes"
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git *)",
+      "Bash(mvn *)",
+      "Bash(./mvnw *)",
+      "Bash(gh pr *)",
+      "Bash(gh issue *)",
+      "Bash(curl -sf *)",
+      "Read",
+      "Glob",
+      "Grep"
+    ]
+  }
+}

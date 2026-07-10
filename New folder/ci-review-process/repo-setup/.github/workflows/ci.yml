@@ -1,0 +1,73 @@
+name: ci
+
+on:
+  pull_request:
+    # edited: để title-check chạy lại đúng lúc dev sửa tiêu đề bỏ [WIP]
+    types: [opened, synchronize, reopened, edited]
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+jobs:
+  # Chốt máy cho quy ước [WIP]: tiêu đề còn [WIP] → check đỏ → không merge.
+  # Đưa vào required status checks nếu repo bật được branch protection (xem 07 §4);
+  # không bật được thì vẫn là dấu ❌ đập vào mắt người merge.
+  title-check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Chặn merge khi tiêu đề còn [WIP]
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          case "$PR_TITLE" in
+            "[WIP]"*) echo "::error::PR còn [WIP] trong tiêu đề — chỉ bỏ [WIP] khi hết [must] của bot và sẵn sàng nhờ người review."; exit 1 ;;
+            *) echo "✅ Tiêu đề không còn [WIP]" ;;
+          esac
+
+  ci:
+    # Chỉ sửa tiêu đề (edited) thì không cần build lại — job bị skip vẫn được
+    # GitHub tính là pass với required status checks.
+    # LƯU Ý: cố tình KHÔNG dùng paths-ignore để bỏ qua PR doc — paths-ignore làm
+    # cả workflow không chạy, required check treo "Expected" và chặn merge vĩnh viễn.
+    # Build thừa vài phút trên PR doc là cái giá chấp nhận được.
+    if: github.event_name == 'push' || github.event.action != 'edited'
+    runs-on: ubuntu-latest
+    services:
+      # Test chạy trên Postgres THẬT (không phải H2) để migration Flyway
+      # được kiểm chứng từ DB trắng mỗi lần chạy.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: app
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U app"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      - name: Build + Test
+        run: mvn -B verify
+        env:
+          PROFILE_ACTIVE: ci
+          DB_URL: jdbc:postgresql://localhost:5432/app
+          DB_USERNAME: app
+          DB_PASSWORD: app
+          JWT_SECRET: ci-only-secret-not-used-anywhere-else-0123456789
+
+      # Khi có frontend, thêm job/step Node tại đây:
+      # - uses: actions/setup-node@v4
+      #   with: { node-version: "22", cache: npm, cache-dependency-path: frontend/package-lock.json }
+      # - working-directory: frontend
+      #   run: npm ci && npm run lint && npm test && npm run build
